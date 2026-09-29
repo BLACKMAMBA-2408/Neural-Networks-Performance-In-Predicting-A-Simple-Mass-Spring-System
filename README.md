@@ -169,13 +169,13 @@ Linear(1 → 32) → Tanh → Linear(32 → 32) → Tanh → Linear(32 → 32) �
 The notebook normalizes time to $\tau \in [0,1]$ for optimization and uses automatic differentiation to obtain $dx/dt$ and $d^2x/dt^2$. The physics residual is
 
 $
-\mathcal{R}(t)=m\ddot{x}_\theta+c\dot{x}_\theta+kx_\theta-F(t),
+\mathcal{R}(t)=m\ddot{x}_\theta+c\dot{x}_\theta+kx_\theta-F(t)
 $
 
 and the training objective is
 
 $
-\mathcal{L}=\mathcal{L}_{\mathrm{physics}}+\lambda_{IC}\mathcal{L}_{IC}.
+\mathcal{L}=\mathcal{L}_{\mathrm{physics}}+\lambda_{IC}\mathcal{L}_{IC}
 $
 
 The implementation uses **2000 collocation points**, Adam optimization with learning rate $10^{-3}$, 10,000 epochs, and $\lambda_{IC}=10$. The notebook is configured to run on the CPU.
