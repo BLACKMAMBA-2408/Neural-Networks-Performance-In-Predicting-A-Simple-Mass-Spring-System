@@ -248,7 +248,7 @@ This makes sense mechanistically: a simple (Elman) RNN with `tanh` recurrence ha
 The PINN introduces a different source of information from the MLP, CNN, and RNN. Its training loss is based on the **ODE residual and initial conditions**, while `mass_spring_data.csv` is reserved for comparison after training.
 
 
-![PINN training loss](assets/pinn_training_loss.png)
+The notebook records the total, physics, and initial-condition losses throughout training, so the training curves can be reproduced directly by running `pinn.ipynb`.
 
 
 The notebook also evaluates the learned solution against the numerical displacement, velocity, and acceleration and reports the corresponding RMSE values. A separate physics-residual evaluation checks how closely the learned function satisfies the governing ODE over the evaluation grid.
