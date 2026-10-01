@@ -15,9 +15,10 @@ A hands-on comparison of an **MLP**, a **CNN**, and an **RNN** — all trained *
    - [3.2 MLP (`mlp.ipynb`)](#32-mlp-mlpipynb)
    - [3.3 CNN (`cnn.ipynb`)](#33-cnn-cnnipynb)
    - [3.4 RNN (`rnn.ipynb`)](#34-rnn-rnnipynb)
+   - [3.5 PINN (`pinn.ipynb`)](#35-pinn-pinnipynb)
 4. [Results and Discussion](#4-results-and-discussion)
 5. [Summary Comparison](#5-summary-comparison)
-6. [Key Takeaway: Why This Motivates PINNs](#6-key-takeaway-why-this-motivates-pinns)
+6. [Key Takeaway: Data-Driven Models vs. PINNs](#6-key-takeaway-data-driven-models-vs-pinns)
 7. [How to Reproduce](#7-how-to-reproduce)
 8. [Limitations and Future Work](#8-limitations-and-future-work)
 9. [Requirements](#9-requirements)
@@ -60,6 +61,7 @@ The system is simulated over $t \in [0, 20]$ s at 2000 evenly spaced points ($\D
 ├── mlp.ipynb                # Coordinate-regression MLP: t → x(t)
 ├── cnn.ipynb                # Windowed 1D-CNN forecaster: x(t-50..t-1) → x(t)
 ├── rnn.ipynb                # Windowed vanilla RNN forecaster: x(t-50..t-1) → x(t)
+├── pinn.ipynb               # Physics-Informed Neural Network: ODE + initial conditions → x(t)
 ├── assets/                  # Figures referenced by this README
 └── README.md
 ```
@@ -146,6 +148,43 @@ Using the same windowing and evaluation protocol as the CNN makes this the most 
 
 ---
 
+## 3.5 PINN (`pinn.ipynb`)
+
+
+The PINN solves the **same governing ODE**, but changes the learning problem fundamentally. Instead of fitting the simulated displacement data, the network learns a continuous approximation $x_\theta(t)$ from the physical law and the initial conditions.
+
+
+**Training information:**
+- Governing equation: $m\ddot{x}+c\dot{x}+kx=F(t)$
+- Initial displacement: $x(0)=0$
+- Initial velocity: $\dot{x}(0)=0$
+- The existing CSV data is used **only for evaluation**, not as a training target.
+
+
+**Architecture:**
+```text
+Linear(1 → 32) → Tanh → Linear(32 → 32) → Tanh → Linear(32 → 32) → Tanh → Linear(32 → 1)
+```
+
+The notebook normalizes time to $\tau \in [0,1]$ for optimization and uses automatic differentiation to obtain $dx/dt$ and $d^2x/dt^2$. The physics residual is
+
+$
+\mathcal{R}(t)=m\ddot{x}_\theta+c\dot{x}_\theta+kx_\theta-F(t)
+$
+
+and the training objective is
+
+$
+\mathcal{L}=\mathcal{L}_{\mathrm{physics}}+\lambda_{IC}\mathcal{L}_{IC}
+$
+
+The implementation uses **2000 collocation points**, Adam optimization with learning rate $10^{-3}$, 10,000 epochs, and $\lambda_{IC}=10$. The notebook is configured to run on the CPU.
+
+
+This makes the PINN a physics-informed counterpart to the purely data-driven models above: the network is not asked to memorize the simulated trajectory; it is asked to produce a function that satisfies the differential equation and initial conditions.
+
+---
+
 ## 4. Results and Discussion
 
 ### MLP: fails even at fitting data it has already seen
@@ -203,6 +242,25 @@ This makes sense mechanistically: a simple (Elman) RNN with `tanh` recurrence ha
 
 ---
 
+### PINN: learns from the governing physics
+
+
+The PINN introduces a different source of information from the MLP, CNN, and RNN. Its training loss is based on the **ODE residual and initial conditions**, while `mass_spring_data.csv` is reserved for comparison after training.
+
+
+The notebook records the total, physics, and initial-condition losses throughout training, so the training curves can be reproduced directly by running `pinn.ipynb`.
+
+
+The notebook also evaluates the learned solution against the numerical displacement, velocity, and acceleration and reports the corresponding RMSE values. A separate physics-residual evaluation checks how closely the learned function satisfies the governing ODE over the evaluation grid.
+
+
+One important practical observation is that the current baseline PINN is **not yet a tuned high-accuracy solution**. In the included 10,000-epoch CPU run, the physics loss decreases substantially but remains non-negligible. This exposes a different optimization challenge: unlike the supervised models, the PINN has no displacement labels to guide it directly, and balancing the physics and initial-condition losses matters.
+
+
+The current notebook therefore serves as a clean baseline PINN implementation. Improving its convergence — for example with longer training, different collocation strategies, loss weighting, or an Adam → L-BFGS optimization schedule — is a natural next step.
+
+---
+
 ## 5. Summary Comparison
 
 | Model | Task Formulation | Metric | Value | Notes |
@@ -219,18 +277,18 @@ This makes sense mechanistically: a simple (Elman) RNN with `tanh` recurrence ha
 
 ---
 
-## 6. Key Takeaway: Why This Motivates PINNs
+## 6. Key Takeaway: Data-Driven Models vs. PINNs
 
 None of these networks has any notion of $m$, $c$, $k$, or the requirement that acceleration relates to the net spring, damping, and forcing terms. Each is a purely data-driven pattern matcher, and all three architectures reveal a version of the same underlying problem once they're pushed past the exact conditions they were trained/evaluated under:
 
 - The MLP cannot represent a sustained oscillation from a bare time input.
 - The CNN and RNN can track the signal beautifully one step at a time, but have no internal constraint keeping a freely-running (autoregressive) prediction physically consistent — nothing enforces that energy behaves correctly, that the restoring force scales with displacement, or that the motion should keep oscillating rather than decay to a fixed point.
 
-A **Physics-Informed Neural Network (PINN)** addresses this directly by adding the ODE residual itself,
+The **PINN implementation in `pinn.ipynb`** takes a different approach: it trains without displacement labels, using the ODE residual itself,
 
-$$\mathcal{L}_{\text{physics}} = \left\| m\ddot{x}_{\theta} + c\dot{x}_{\theta} + kx_{\theta} - F(t) \right\|^2$$
+$\mathcal{L}_{\text{physics}} = \left\| m\ddot{x}_{\theta} + c\dot{x}_{\theta} + kx_{\theta} - F(t) \right\|^2$
 
-as an explicit term in the training loss (evaluated via automatic differentiation of the network's own output), alongside any data-fitting term. This forces the learned function to *obey the governing dynamics everywhere*, not just approximate points it happened to see in training — which is exactly the property missing from every model in this repository.
+along with the initial-condition loss. Automatic differentiation supplies the derivatives of the network output. The numerical dataset is then used only to evaluate the learned solution. This provides a direct contrast with the data-driven models: instead of learning only from observed trajectory values, the PINN is explicitly constrained by the governing dynamics.
 
 ---
 
@@ -249,9 +307,10 @@ jupyter notebook physics.ipynb   # generates mass_spring_data.csv — run this f
 jupyter notebook mlp.ipynb
 jupyter notebook cnn.ipynb
 jupyter notebook rnn.ipynb
+jupyter notebook pinn.ipynb
 ```
 
-`physics.ipynb` must be run first (or `mass_spring_data.csv` must already be present) since all three network notebooks load that file directly.
+`physics.ipynb` must be run first (or `mass_spring_data.csv` must already be present) since the MLP, CNN, RNN, and PINN notebooks use that dataset. The PINN does not use the displacement data as a training target; it loads the CSV for post-training evaluation.
 
 ---
 
@@ -261,7 +320,8 @@ jupyter notebook rnn.ipynb
 - **Unfair task comparison.** The MLP solves a different problem (full-domain coordinate regression) than the CNN/RNN (windowed forecasting). A stronger architecture comparison would give all three models the same windowed input so raw representational power can be compared directly.
 - **Rollout metrics aren't printed in the CNN/RNN notebooks** — they're computed (`rollout_mse`, `rollout_rmse`) but never displayed; add a `print()` statement to capture exact values per run.
 - **No baseline models.** A naive persistence predictor (repeat the last known value) or simple linear extrapolation would help quantify how much of the CNN/RNN's one-step accuracy is really architectural skill versus the task being locally easy at this sampling rate.
-- **Next step: implement a PINN** for this same system and directly compare its rollout/extrapolation behavior against the failures documented here — using the ODE residual loss described in [Section 6](#6-key-takeaway-why-this-motivates-pinns).
+- **PINN optimization can be improved.** The current `pinn.ipynb` is a baseline physics-only implementation. Longer training, better collocation strategies, adaptive loss weighting, or an Adam → L-BFGS schedule could improve convergence and provide a stronger comparison against the numerical solution.
+- **PINN evaluation can be expanded.** A future version could compare data-free PINN accuracy and physics residuals systematically across collocation densities and network architectures.
 
 ---
 
