@@ -1,6 +1,6 @@
 # Neural Network Performance in Predicting a Simple Mass–Spring System
 
-A hands-on comparison of an **MLP**, a **CNN**, and an **RNN** — all trained *without any knowledge of the governing physics* — on the task of reproducing the motion of a linearly damped, sinusoidally forced mass–spring oscillator. The goal is not to build the best possible predictor, but to directly experience, in code, where and why "black-box" neural networks fail on a physical dynamical system — motivating the case for **Physics-Informed Neural Networks (PINNs)**.
+A hands-on comparison of an **MLP**, a **CNN**, and an **RNN** — all trained _without any knowledge of the governing physics_ — on the task of reproducing the motion of a linearly damped, sinusoidally forced mass–spring oscillator. The goal is not to build the best possible predictor, but to directly experience, in code, where and why "black-box" neural networks fail on a physical dynamical system — motivating the case for **Physics-Informed Neural Networks (PINNs)**.
 
 > This project was completed as an assignment to explore, first-hand, why architectures with no governing ODE constraint struggle on physical systems before implementing a PINN. Several of the results below are **intentional failure cases**, not bugs.
 
@@ -33,14 +33,14 @@ $$m\ddot{x} + c\dot{x} + kx = F(t)$$
 
 **Physical parameters:**
 
-| Symbol | Meaning | Value |
-|---|---|---|
-| $m$ | Mass | 1 kg |
-| $c$ | Damping coefficient | 0.4 N·s/m |
-| $k$ | Spring stiffness | 4 N/m |
-| $F(t)$ | Forcing function | $2\sin(1.5t)$ N |
-| $x(0)$ | Initial displacement | 0 m |
-| $\dot{x}(0)$ | Initial velocity | 0 m/s |
+| Symbol       | Meaning              | Value           |
+| ------------ | -------------------- | --------------- |
+| $m$          | Mass                 | 1 kg            |
+| $c$          | Damping coefficient  | 0.4 N·s/m       |
+| $k$          | Spring stiffness     | 4 N/m           |
+| $F(t)$       | Forcing function     | $2\sin(1.5t)$ N |
+| $x(0)$       | Initial displacement | 0 m             |
+| $\dot{x}(0)$ | Initial velocity     | 0 m/s           |
 
 Substituting these values gives the specific governing equation used throughout this project:
 
@@ -85,8 +85,8 @@ with $\omega_d = \sqrt{3.96}$, $A = 1400/1369$, $B = -480/1369$.
 
 The two solutions are compared directly to validate the simulation before it's used as ground truth for any network.
 
-| Displacement | Velocity | External Force |
-|---|---|---|
+| Displacement                                     | Velocity                                 | External Force                     |
+| ------------------------------------------------ | ---------------------------------------- | ---------------------------------- |
 | ![Displacement](assets/physics_displacement.png) | ![Velocity](assets/physics_velocity.png) | ![Force](assets/physics_force.png) |
 
 **Validation — analytical vs. numerical:**
@@ -99,16 +99,18 @@ The two solutions are compared directly to validate the simulation before it's u
 
 ### 3.2 MLP (`mlp.ipynb`)
 
-**Formulation:** a *coordinate regression* problem. The network receives **only the raw time value** $t$ and must directly output the displacement:
+**Formulation:** a _coordinate regression_ problem. The network receives **only the raw time value** $t$ and must directly output the displacement:
 
 $$t \;\longrightarrow\; x(t)$$
 
 No history, no local structure — the MLP has to learn the entire shape of the trajectory as a single continuous function of a scalar input.
 
 **Architecture:**
+
 ```
 Linear(1 → 32) → Tanh → Linear(32 → 32) → Tanh → Linear(32 → 1)
 ```
+
 - Loss: MSE · Optimizer: Adam (default lr) · Epochs: 5000
 - Trained on the **entire** trajectory (no train/test split — this is a pure function-fitting exercise, so performance here reflects the model's ability to fit the data it can already see, not generalize to unseen time values)
 
@@ -116,20 +118,23 @@ Linear(1 → 32) → Tanh → Linear(32 → 32) → Tanh → Linear(32 → 1)
 
 ### 3.3 CNN (`cnn.ipynb`)
 
-**Formulation:** re-cast as a *windowed time-series forecasting* problem — the CNN is given a short trailing history of the signal and asked to predict the very next point:
+**Formulation:** re-cast as a _windowed time-series forecasting_ problem — the CNN is given a short trailing history of the signal and asked to predict the very next point:
 
 $$[x(t_0), x(t_1), \dots, x(t_{49})] \;\longrightarrow\; x(t_{50})$$
 
 A sliding window of **50 samples (~0.5 s)** is used, producing 1950 (input, target) pairs, split **70/30** into train/test sets (1365 / 585 samples).
 
 **Architecture:**
+
 ```
 Conv1d(1→16, k=5) → Tanh → Conv1d(16→32, k=5) → Tanh → Flatten → Linear(1344→64) → Tanh → Linear(64→1)
 ```
+
 - Loss: MSE · Optimizer: Adam (lr = 0.001) · Batch size: 32 · Epochs: 50
 
 Two evaluation modes are used:
-- **One-step (teacher-forced):** at every test point, the model is given the *true* preceding 50 values.
+
+- **One-step (teacher-forced):** at every test point, the model is given the _true_ preceding 50 values.
 - **Autoregressive rollout:** the model is seeded with the true 50 values at the start of the test region only, then must generate the rest of the trajectory using **its own predictions** as future input — no ground truth is fed in again.
 
 ---
@@ -139,9 +144,11 @@ Two evaluation modes are used:
 **Formulation:** identical windowed forecasting setup to the CNN — same window size, same 70/30 split, same two evaluation modes — but processed with a sequential architecture designed to carry state across time steps rather than treat the window as a flat vector.
 
 **Architecture:**
+
 ```
 RNN(input_size=1, hidden_size=32, num_layers=1, batch_first=True) → take last time step → Linear(32→1)
 ```
+
 - Loss: MSE · Optimizer: Adam (lr = 0.001) · Batch size: 32 · Epochs: 50
 
 Using the same windowing and evaluation protocol as the CNN makes this the most direct architecture-vs-architecture comparison in the project.
@@ -155,6 +162,7 @@ Using the same windowing and evaluation protocol as the CNN makes this the most 
 $$t \;\longrightarrow\; x_\theta(t), \qquad \text{subject to} \qquad m\ddot{x}_\theta+c\dot{x}_\theta+kx_\theta=F(t),\ \ x_\theta(0)=0,\ \ \dot{x}_\theta(0)=0$$
 
 **Architecture:**
+
 ```
 Linear(1 → 32) → Tanh → Linear(32 → 32) → Tanh → Linear(32 → 32) → Tanh → Linear(32 → 1)
 ```
@@ -177,18 +185,18 @@ This is a physics-informed counterpart to the purely data-driven models above: t
 
 ### MLP: fails even at fitting data it has already seen
 
-| Training Loss | Prediction vs. Ground Truth |
-|---|---|
+| Training Loss                             | Prediction vs. Ground Truth                          |
+| ----------------------------------------- | ---------------------------------------------------- |
 | ![MLP loss](assets/mlp_training_loss.png) | ![MLP prediction](assets/mlp_prediction_vs_true.png) |
 
 **Final performance: `MSE = 3.152e-01`, `RMSE = 5.615e-01` m** — against a signal whose amplitude is only ~1.3 m, this is a large error relative to the signal itself.
 
-The loss curve tells the real story: after 5000 epochs it is *still decreasing* — the network never converges. Looking at the prediction plot, the MLP tracks the first two to three oscillation cycles (the strong transient) almost perfectly, then progressively flattens out and fails to reproduce the sustained steady-state oscillation for the remaining ~12 seconds — even though **every one of those points was part of its training data.** This isn't a generalization failure; it's a failure to fit at all.
+The loss curve tells the real story: after 5000 epochs it is _still decreasing_ — the network never converges. Looking at the prediction plot, the MLP tracks the first two to three oscillation cycles (the strong transient) almost perfectly, then progressively flattens out and fails to reproduce the sustained steady-state oscillation for the remaining ~12 seconds — even though **every one of those points was part of its training data.** This isn't a generalization failure; it's a failure to fit at all.
 
 Two compounding causes:
 
 1. **No input normalization.** Raw $t \in [0, 20]$ is fed straight into `Tanh` layers. Without scaling, pre-activations grow large and gradients through saturated tanh units shrink, slowing optimization substantially.
-2. **Spectral bias of coordinate MLPs.** It's a well-documented property of standard MLPs (see Tancik et al., *"Fourier Features Let Networks Learn High-Frequency Functions in Low-Dimensional Domains,"* 2020) that they are strongly biased toward learning low-frequency, slowly varying components of a function first. A raw scalar-time input with no periodic/frequency encoding gives the network no efficient way to represent a sustained oscillation — it defaults to something closer to a decaying envelope, which is exactly what's visible in the plot.
+2. **Spectral bias of coordinate MLPs.** It's a well-documented property of standard MLPs (see Tancik et al., _"Fourier Features Let Networks Learn High-Frequency Functions in Low-Dimensional Domains,"_ 2020) that they are strongly biased toward learning low-frequency, slowly varying components of a function first. A raw scalar-time input with no periodic/frequency encoding gives the network no efficient way to represent a sustained oscillation — it defaults to something closer to a decaying envelope, which is exactly what's visible in the plot.
 
 This is precisely the class of failure that motivates embedding the physics directly into the loss function (a PINN) rather than hoping a generic function approximator discovers the oscillatory structure on its own.
 
@@ -196,8 +204,8 @@ This is precisely the class of failure that motivates embedding the physics dire
 
 ### CNN: excellent one-step, but drifts under its own predictions
 
-| Loss Curve | One-Step Prediction |
-|---|---|
+| Loss Curve                                | One-Step Prediction                                |
+| ----------------------------------------- | -------------------------------------------------- |
 | ![CNN loss](assets/cnn_training_loss.png) | ![CNN one-step](assets/cnn_onestep_prediction.png) |
 
 **One-step (teacher-forced) performance: `RMSE = 1.619e-02` m** — visually near-perfect tracking.
@@ -208,14 +216,14 @@ This looks like a success, but it's a much easier task than it appears: with $\D
 
 ![CNN rollout](assets/cnn_rollout.png)
 
-The rollout tracks the true trajectory closely for the first cycle, then visibly drifts in **both amplitude and phase** — by the end of the 6-second rollout window shown, the predicted peaks overshoot the true amplitude by roughly 30–40% and the oscillation is measurably out of phase with the ground truth. In a reproduction run under the same architecture and training settings, rollout RMSE was **~28× larger** than the one-step RMSE. *(Note: the notebook computes `rollout_mse`/`rollout_rmse` but doesn't print them — add a `print()` call to see the exact value for your own run; results will vary slightly run-to-run since no random seed is fixed.)*
+The rollout tracks the true trajectory closely for the first cycle, then visibly drifts in **both amplitude and phase** — by the end of the 6-second rollout window shown, the predicted peaks overshoot the true amplitude by roughly 30–40% and the oscillation is measurably out of phase with the ground truth. In a reproduction run under the same architecture and training settings, rollout RMSE was **~28× larger** than the one-step RMSE. _(Note: the notebook computes `rollout_mse`/`rollout_rmse` but doesn't print them — add a `print()` call to see the exact value for your own run; results will vary slightly run-to-run since no random seed is fixed.)_
 
 ---
 
 ### RNN: best one-step accuracy, but the most dramatic rollout failure
 
-| Loss Curve | One-Step Prediction | Prediction Error |
-|---|---|---|
+| Loss Curve                                | One-Step Prediction                                | Prediction Error                              |
+| ----------------------------------------- | -------------------------------------------------- | --------------------------------------------- |
 | ![RNN loss](assets/rnn_training_loss.png) | ![RNN one-step](assets/rnn_onestep_prediction.png) | ![RNN error](assets/rnn_prediction_error.png) |
 
 **One-step (teacher-forced) performance: `RMSE = 6.309e-03` m** — the best of the three architectures at this task, consistent with the RNN's hidden state being naturally suited to sequential, one-step-ahead prediction.
@@ -232,29 +240,29 @@ This makes sense mechanistically: a simple (Elman) RNN with `tanh` recurrence ha
 
 ### PINN: matches the data-driven models without ever seeing their data
 
-| Training Loss (log scale) | Prediction vs. Numerical Solution |
-|---|---|
+| Training Loss (log scale)                 | Prediction vs. Numerical Solution                      |
+| ----------------------------------------- | ------------------------------------------------------ |
 | ![PINN loss](assets/pinn_loss_curves.png) | ![PINN prediction](assets/pinn_prediction_vs_true.png) |
 
 **Final performance, evaluated against the numerical solution (never used in training):**
 
-| Quantity | RMSE |
-|---|---|
-| Displacement | **8.177e-04 m** |
-| Velocity | 1.627e-03 m/s |
-| Acceleration | 3.481e-03 m/s² |
+| Quantity         | RMSE                                                       |
+| ---------------- | ---------------------------------------------------------- |
+| Displacement     | **8.177e-04 m**                                            |
+| Velocity         | 1.627e-03 m/s                                              |
+| Acceleration     | 3.481e-03 m/s²                                             |
 | Physics residual | 1.221e-03 (mean \|residual\| = 1.014e-03, max = 6.142e-03) |
 
 This is, by a wide margin, the most accurate model in the project — roughly **20× lower displacement RMSE than the RNN's one-step forecaster** (0.0063 m) and **690× lower than the MLP** (0.5615 m) — despite the PINN never once seeing a true $(t, x)$ pair. The prediction overlays the numerical solution almost exactly across all five oscillation cycles shown above; the error plot below stays bounded within about ±0.002 m for the entire 20-second domain, with no sign of the drift or flattening seen in the MLP:
 
 ![PINN prediction error](assets/pinn_prediction_error.png)
 
-The loss curves show *why* this works. Both the physics loss and the initial-condition loss drop by close to six orders of magnitude over training and settle into a low, stable band — the oscillations visible late in training are expected noise from Adam's step size interacting with a loss that's already near its floor, not divergence. Driving the physics residual this low everywhere on the domain (not just at a finite set of training points) is what the ODE constraint buys over plain data-fitting: there's no "gap between training cycles" for the network to fall into the way the MLP's did.
+The loss curves show _why_ this works. Both the physics loss and the initial-condition loss drop by close to six orders of magnitude over training and settle into a low, stable band — the oscillations visible late in training are expected noise from Adam's step size interacting with a loss that's already near its floor, not divergence. Driving the physics residual this low everywhere on the domain (not just at a finite set of training points) is what the ODE constraint buys over plain data-fitting: there's no "gap between training cycles" for the network to fall into the way the MLP's did.
 
 **A capability none of the data-driven models have:** because $x_\theta(t)$ is a differentiable closed-form function of time, velocity and acceleration come for free from automatic differentiation — no separate model, no finite-difference approximation — and both match the numerical solution closely:
 
-| Velocity vs. Numerical | Acceleration vs. Numerical |
-|---|---|
+| Velocity vs. Numerical                             | Acceleration vs. Numerical                                 |
+| -------------------------------------------------- | ---------------------------------------------------------- |
 | ![PINN velocity](assets/pinn_velocity_vs_true.png) | ![PINN acceleration](assets/pinn_acceleration_vs_true.png) |
 
 The physics residual itself — how far $m\ddot{x}_\theta+c\dot{x}_\theta+kx_\theta-F(t)$ is from zero, evaluated across the whole domain after training — stays small and bounded rather than growing over time:
@@ -267,18 +275,18 @@ That boundedness is the direct payoff of training this way. The CNN and RNN's on
 
 ## 5. Summary Comparison
 
-| Model | Task Formulation | Metric | Value | Notes |
-|---|---|---|---|---|
-| **MLP** | $t \to x(t)$, full-domain fit | RMSE | **0.5615 m** | Fails to converge even on training data; flattens after ~3 cycles |
-| **CNN** | 50-step window → next point | One-step RMSE | **0.0162 m** | Near-perfect with true history fed in |
-| **CNN** | same, autoregressive | Rollout RMSE | **~0.5–1.1 m*** | Drifts in amplitude & phase |
-| **RNN** | 50-step window → next point | One-step RMSE | **0.0063 m** | Best one-step accuracy of the three |
-| **RNN** | same, autoregressive | Rollout RMSE | **~0.8–1.0 m*** | Collapses to a flat, non-oscillating value |
-| **PINN** | ODE residual + IC only, zero displacement data | Displacement RMSE | **0.000818 m** | Best of all five models; error stays bounded across the full domain |
+| Model    | Task Formulation                               | Metric            | Value            | Notes                                                               |
+| -------- | ---------------------------------------------- | ----------------- | ---------------- | ------------------------------------------------------------------- |
+| **MLP**  | $t \to x(t)$, full-domain fit                  | RMSE              | **0.5615 m**     | Fails to converge even on training data; flattens after ~3 cycles   |
+| **CNN**  | 50-step window → next point                    | One-step RMSE     | **0.0162 m**     | Near-perfect with true history fed in                               |
+| **CNN**  | same, autoregressive                           | Rollout RMSE      | **~0.5–1.1 m\*** | Drifts in amplitude & phase                                         |
+| **RNN**  | 50-step window → next point                    | One-step RMSE     | **0.0063 m**     | Best one-step accuracy of the three                                 |
+| **RNN**  | same, autoregressive                           | Rollout RMSE      | **~0.8–1.0 m\*** | Collapses to a flat, non-oscillating value                          |
+| **PINN** | ODE residual + IC only, zero displacement data | Displacement RMSE | **0.000818 m**   | Best of all five models; error stays bounded across the full domain |
 
-<sub>*Rollout figures marked with an asterisk are from an independent reproduction run under matching hyperparameters, since the shipped notebooks compute these values but do not print them. Signal amplitude is ~1.3 m, so these errors are on the same order as the signal itself.</sub>
+<sub>\*Rollout figures marked with an asterisk are from an independent reproduction run under matching hyperparameters, since the shipped notebooks compute these values but do not print them. Signal amplitude is ~1.3 m, so these errors are on the same order as the signal itself.</sub>
 
-**The central pattern:** the MLP, CNN, and RNN each perform reasonably — even impressively — when allowed to lean on either the full training set (MLP interpolation) or ground-truth history (CNN/RNN one-step forecasting). The moment that crutch is removed — extrapolating beyond training in the MLP's case, or running freely without ground-truth feedback in the CNN/RNN case — every one of their errors grows to the same order of magnitude as the signal itself. None of the three knows *why* the system oscillates the way it does; they only know how to locally pattern-match what they've already seen. The PINN breaks that pattern entirely: trained on **zero** displacement data, constrained only by the ODE and the initial conditions, it beats all three data-driven models' best reported RMSE and keeps its error bounded across the whole domain rather than localized to wherever training data happened to be dense.
+**The central pattern:** the MLP, CNN, and RNN each perform reasonably — even impressively — when allowed to lean on either the full training set (MLP interpolation) or ground-truth history (CNN/RNN one-step forecasting). The moment that crutch is removed — extrapolating beyond training in the MLP's case, or running freely without ground-truth feedback in the CNN/RNN case — every one of their errors grows to the same order of magnitude as the signal itself. None of the three knows _why_ the system oscillates the way it does; they only know how to locally pattern-match what they've already seen. The PINN breaks that pattern entirely: trained on **zero** displacement data, constrained only by the ODE and the initial conditions, it beats all three data-driven models' best reported RMSE and keeps its error bounded across the whole domain rather than localized to wherever training data happened to be dense.
 
 ---
 
@@ -319,8 +327,6 @@ jupyter notebook pinn.ipynb
 
 `physics.ipynb` must be run first (or `mass_spring_data.csv` must already be present) since the MLP, CNN, RNN, and PINN notebooks use that dataset. The PINN does not use the displacement data as a training target; it loads the CSV only for post-training evaluation.
 
-> **Note:** `pinn.ipynb` currently loads the CSV from a hardcoded Kaggle path (`/kaggle/input/datasets/.../mass_spring_data.csv`) left over from development. Update that `np.loadtxt(...)` call to the relative path `"mass_spring_data.csv"` (matching the other notebooks) before running it outside Kaggle, or it will raise `FileNotFoundError`.
-
 ---
 
 ## 8. Limitations and Future Work
@@ -345,4 +351,4 @@ jupyter notebook pinn.ipynb
 
 ---
 
-*Author: BLACKMAMBA-2408*
+_Author: BLACKMAMBA-2408_
